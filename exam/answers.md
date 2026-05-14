@@ -206,13 +206,99 @@ Answer any 4 questions. Each question carries 5 marks.
 
 1. You are given product interaction logs with `customer_id`, `event_type`, `product_id`, `price`, `quantity`, and `is_returned`. Describe a pandas feature engineering pipeline that creates one row per customer using counts, revenue, return behavior, unique products, and conversion-rate style features.
 
+**Ans:**
+
+Suppose following is the raw data:
+
+
+| customer_id | event_type | product_id | price | quantity | is_returned |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 101 | view | A1 | 20 | 1 | 0 |
+| 101 | purchase | A1 | 20 | 1 | 0 |
+| 101 | purchase | B2 | 50 | 1 | 1 |
+| 102 | view | C3 | 15 | 1 | 0 |
+| 102 | view | D4 | 30 | 1 | 0 |
+| 103 | purchase | E5 | 100 | 1 | 0 |
+
+
+**The Approach:** We use `groupby('customer_id')` to put all rows for a specific customer into a "bucket." Then, we apply specific mathematical rules to the columns inside that bucket:
+    *   **Sum:** Add up all the `revenue` and `is_returned` values to get totals.
+    *   **Conditional Count:** We look at the `event_type` column. We count how many times "purchase" appears and how many times "view" appears.
+    *   **Unique Count:** We look at the `product_id` column and count the number of *distinct* items interacted with (`nunique`).
+    *   **return_rate** = Total Returns / Total Purchases
+    *   **conversion_rate** = Total Purchases / Total Views
+*   **Handling Errors:** Apply `.fillna(0)` at the end to ensure that if a user has zero purchases, dividing by zero doesn't break our dataset.
+
+##### Steps:
+df['revenue'] = df['price'] * df['quantity']
+summary = df.groupby('customer_id').agg(
+    total_spent=('revenue', 'sum'),
+    purchases=('event_type', lambda x: (x == 'purchase').sum()),
+    views=('event_type', lambda x: (x == 'view').sum()),
+    returns=('is_returned', 'sum'),
+    unique_products=('product_id', 'nunique')
+)
+
+summary['return_rate'] = (summary['returns'] / summary['purchases']).fillna(0)
+summary['conv_rate'] = (summary['purchases'] / summary['views']).fillna(0)
+
+| customer_id | total_spent | purchases | views | returns | unique_products | return_rate | conv_rate |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **101** | 90 | 2 | 1 | 1 | 2 | 0.5 | 2.0 |
+| **102** | 0 | 0 | 2 | 0 | 2 | 0.0 | 0.0 |
+| **103** | 100 | 1 | 0 | 0 | 1 | 0.0 | inf |
+
+
+---
+
 2. A CNN trained on 28x28 grayscale images reaches 99% training accuracy but only 82% validation accuracy. Explain at least four likely causes or fixes.
+
+    **Ans:**
+        The large gap (99% train vs 82% val) is a classic overfitting signature. Likely causes and fixes:
+        i. Model too large for the data — too many parameters relative to training examples. Fix: reduce model depth/width or use a simpler architecture.
+        ii. No regularization — without Dropout or weight decay, nothing penalizes the model for memorizing. Fix: add nn.Dropout, add weight_decay to the optimizer.
+        iii. Training too long without early stopping — validation loss starts rising while training loss keeps falling. Fix: monitor validation loss and stop when it stops improving.
+        iv. Insufficient data diversity — model hasn't seen enough variation. Fix: apply data augmentation (random rotations, translations, flips where label-safe) to artificially increase variety.
+        v. Not calling model.eval() during validation — Dropout stays active, giving inconsistent results. Fix: always wrap validation in model.eval() and torch.no_grad().
+
+---
 
 3. Explain the difference between logits, probabilities, and predicted class labels in a multi-class PyTorch classifier. Include where `CrossEntropyLoss` fits in.
 
+**Ans:**
+* Logits are the raw, unconstrained outputs of the final linear layer — real numbers with no bounds (e.g. [-1.2, 3.4, 0.7]).
+* Probabilities are obtained by applying softmax to logits. The output values are all positive and sum to 1, representing the model's confidence per class (e.g. [0.05, 0.88, 0.07]).
+* Class labels are the final prediction — the integer index of the highest probability, obtained via argmax (e.g. 1).
+* nn.CrossEntropyLoss expects raw logits (not softmax outputs) because it applies LogSoftmax internally in a numerically stable way. Passing softmax outputs would apply it twice and produce incorrect gradients. During inference, to get probabilities you apply torch.softmax(logits, dim=1), and for the predicted class, torch.argmax(logits, dim=1).
+
+---
+
 4. A medical image dataset has 5,000 normal samples and 300 disease-positive samples. Propose a training and evaluation strategy that handles imbalance responsibly.
 
+**Ans:**
+With a 5000:300 imbalance (about 17:1 ratio), naive training will create a model biased toward the majority class. A responsible strategy includes:
+
+Training:
+
+- Use inverse-frequency sampling weights (WeightedRandomSampler in PyTorch) so each mini-batch reflects roughly equal class representation.
+- Alternatively, use class-weighted loss: pass the weight parameter to CrossEntropyLoss to penalize disease-positive errors more heavily.
+- Apply augmentation specifically to minority class samples to boost effective diversity.
+
+Evaluation:
+
+- Never use accuracy alone; a model that predicts "normal" will always achieve 94%.
+- Use recall (sensitivity) as the main metric; missing a disease case is far worse than a false alarm.
+- Report precision, recall, F1 for each class, and the complete confusion matrix.
+- Use a held-out stratified test set that maintains the real-world class ratio.
+
+The goal is to minimize false negatives (missed disease cases), even if it means accepting some false positives.
+
+---
+
 5. You are fine-tuning a pretrained CNN on a small custom dataset. Explain when you would freeze layers, when you would unfreeze layers, and how you would choose learning rates.
+
+
+---
 
 ## Section C: Coding
 
